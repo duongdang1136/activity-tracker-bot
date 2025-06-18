@@ -1,0 +1,58 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C/C++ object files
+*.so
+*.o
+
+# Virtual environment
+# Không bao giờ đưa thư mục môi trường ảo lên Git!
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Log files
+# Không đưa file log lên, chúng chỉ dành cho môi trường local
+logs/
+*.log
+*.log.*
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+# File chứa thông tin nhạy cảm nhất, TUYỆT ĐỐI không đưa lên Git!
+.env
+.env.*
+secrets.yaml
+
+# OS-generated files
+.DS_Store
+Thumbs.db

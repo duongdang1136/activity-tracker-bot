@@ -1,0 +1,8 @@
+supabase
+zlapi
+pydantic-settings
+discord.py
+Flask
+Flask-Cors
+schedule
+discord.py
