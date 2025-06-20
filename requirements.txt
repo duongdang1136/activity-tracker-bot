@@ -1,8 +1,15 @@
 supabase
-zlapi
+zlapi==1.0.3
+munch==4.0.0
 pydantic-settings
 discord.py
+python-telegram-bot[ext]  # Thêm [ext] để có các extension như ApplicationBuilder
 Flask
 Flask-Cors
 schedule
 discord.py
+asyncio
+Dict
+datetime
+apscheduler
+cryptography

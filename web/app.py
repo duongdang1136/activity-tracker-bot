@@ -1,6 +1,6 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-from services.web_service import WebService
+from services import WebService
 
 app = Flask(__name__)
 CORS(app)
@@ -15,7 +15,7 @@ def get_leaderboard(platform_name, group_name):
     return jsonify(data)
 
 def run_web_app():
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
     run_web_app()

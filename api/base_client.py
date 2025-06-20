@@ -1,4 +1,3 @@
-# api/base_client.py (File mới)
 from abc import ABC, abstractmethod
 
 class BaseApiClient(ABC):

@@ -1,5 +1,8 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import supabase
-from config.config import settings
+from config import settings
 
 class DatabaseManager:
     def __init__(self):
@@ -65,25 +68,6 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error fetching inactive users: {e}")
             return []
-
-# Bạn cần tạo function RPC 'get_inactive_members' trong Supabase SQL Editor:
-# CREATE OR REPLACE FUNCTION get_inactive_members(p_group_id UUID, p_platform_id INTEGER)
-# RETURNS TABLE(user_platform_id VARCHAR, display_name VARCHAR, group_platform_id VARCHAR) AS $$
-# BEGIN
-#     RETURN QUERY
-#     SELECT upp.platform_user_id, u.display_name, pg.group_platform_id
-#     FROM user_activity_summary uas
-#     JOIN users u ON uas.user_id = u.id
-#     JOIN user_platform_profiles upp ON uas.user_id = upp.user_id AND uas.platform_id = upp.platform_id
-#     JOIN platform_groups pg ON uas.group_id = pg.id
-#     WHERE uas.group_id = p_group_id
-#       AND uas.platform_id = p_platform_id
-#       AND uas.user_status = 'inactive';
-# END;
-# $$ LANGUAGE plpgsql;
-
-
-
 
 
 
