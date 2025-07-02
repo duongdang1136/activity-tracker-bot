@@ -17,7 +17,21 @@ from config import settings
 # ==============================================================================
 # Thay thế các giá trị UUID và ID này bằng dữ liệu thực tế từ database của bạn.
 # Bạn có thể lấy các ID này từ bảng `platform_groups` và `platforms` trong Supabase.
-MANAGED_GROUPS: List[Dict] = []
+MANAGED_GROUPS: List[Dict] = [
+    {
+        'group_name': 'Trading Squad (Discord)', # Bạn có thể đặt tên bất kỳ để dễ nhận biết
+        'group_db_id': '3a6c0697-041b-4212-9ce0-e95ec68f58b2', # groupid của Discord bạn cung cấp
+        'platform_db_id': 2, # ID của platform 'Discord' trong bảng platforms
+        'platform_name': 'Discord',
+    },
+    {
+        'group_name': 'Đặng Gia (Zalo)', # Tên nhóm Zalo của bạn
+        'group_db_id': '6799604717677589329', # <<--- THAY THẾ BẰNG groupid ZALO CỦA BẠN
+        'platform_db_id': 1, # ID của platform 'Zalo' trong bảng platforms
+        'platform_name': 'Zalo',
+    },
+    # Thêm các nhóm khác ở đây nếu có...
+]
 
 # ==============================================================================
 # CÁC HÀM TÁC VỤ ĐỊNH KỲ (SCHEDULED TASKS)
@@ -68,15 +82,10 @@ async def main():
     # Các tác vụ đồng bộ (sync) cần chạy trong thread riêng để không block vòng lặp async
     # `daemon=True` đảm bảo các thread này sẽ tự động tắt khi chương trình chính kết thúc
     
-    # 1. Chạy Zalo Listener (thư viện zlapi là sync)
-    zalo_thread = threading.Thread(target=run_zalo_listener, name="ZaloListener", daemon=True)
     
-    # 2. Chạy Web App (Flask là sync)
-    web_thread = threading.Thread(target=run_web_app, name="WebApp", daemon=True)
-    
-    # 3. Chạy Scheduler (thư viện schedule là sync)
-    scheduler_thread = threading.Thread(target=run_scheduler, name="Scheduler", daemon=True)
-
+    zalo_thread = threading.Thread(target=run_zalo_listener, name="ZaloListener", daemon=True) # 1. Chạy Zalo Listener (thư viện zlapi là sync)
+    web_thread = threading.Thread(target=run_web_app, name="WebApp", daemon=True) # 2. Chạy Web App (Flask là sync)
+    scheduler_thread = threading.Thread(target=run_scheduler, name="Scheduler", daemon=True) # 3. Chạy Scheduler (thư viện schedule là sync)
     # Bắt đầu các thread đồng bộ
     zalo_thread.start()
     web_thread.start()

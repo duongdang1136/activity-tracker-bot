@@ -13,3 +13,4 @@ Dict
 datetime
 apscheduler
 cryptography
+flask-bcrypt
