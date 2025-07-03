@@ -29,20 +29,40 @@ class ZaloApiClient(BaseApiClient):
             print("Logging into Zalo...")
             self.client = ZaloAPI(self.phone, self.password, self.imei, self.cookies)
             my_info = self.client.fetchAccountInfo().profile.get("userId")
-            print("✅ Zalo login successful.")
+            print("✅ Zalo login successfulas: {my_info.name}")
         except Exception as e:
             print(f"❌ Zalo login failed: {e}")
             self.client = None
     
-    def send_message(self, group_id: str, message: str):
-        if not self.client: 
-            print("❌ Zalo client not initialized. Cannot send message.")
-            return
+    def send_message(self, message: str, user_id: str = None, group_id: str = None):
+        """
+        Gửi một tin nhắn văn bản đến người dùng (nếu có user_id) 
+        hoặc đến nhóm (nếu có group_id).
+        """
+        if not self.client:
+            print("❌ Zalo client not initialized.")
+            raise ConnectionError("Zalo client is not connected.")
+
+
+        # Ưu tiên gửi cho người dùng cá nhân nếu có user_id
+        if user_id:
+            recipient_id = user_id
+            recipient_type = "user"
+        elif group_id:
+            recipient_id = group_id
+            recipient_type = "group"
+        else:
+            # Báo lỗi nếu không có người nhận nào được chỉ định
+            print("❌ Error: Must provide either user_id or group_id to send a Zalo message.")
+            raise ValueError("No recipient specified for Zalo message.")
+
         try:
-            self.client.send_text_message(group_id, message)
-            print(f"Sent message to Zalo group {group_id}")
+            # Phương thức này của zlapi hoạt động cho cả hai
+            self.client.send_text_message(recipient_id, message)
+            print(f"✅ Sent message to Zalo {recipient_type} {recipient_id}")
         except Exception as e:
-            print(f"Failed to send Zalo message: {e}")
+            print(f"❌ Failed to send Zalo message to {recipient_id}: {e}")
+            raise e
 
     def remove_user(self, group_id: str, user_id: str):
         if not self.client:

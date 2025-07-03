@@ -9,6 +9,10 @@ from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from config import db_manager
 from services import WebService
+from api import zalo_api_client
+import random
+import time
+from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__)
 CORS(app) # Cho phép cross-origin requests
@@ -94,8 +98,10 @@ def login_user():
         return jsonify({"error": str(e)}), 500
 
 
-
-def _link_platform_account(user_id: str, platform_id: int, platform_name: str, platform_user_id: str, platform_username: str): # API LIÊN KẾT TÀI KHOẢN (MỞ RỘNG)
+# ==============================================================================
+# API LIÊN KẾT TÀI KHOẢN (MỞ RỘNG)
+# ==============================================================================
+def _link_platform_account(user_id: str, platform_id: int, platform_name: str, platform_user_id: str, platform_username: str): 
     #"""Hàm private chung để xử lý logic liên kết, tránh lặp code."""
     try:
         response = db_manager.client.from_('user_platform_profiles').insert({
@@ -156,97 +162,128 @@ def link_telegram_account(user_id):
         data['telegram_username']
     )
 
-# --- API: Liên kết Zalo ---
-@app.route('/api/users/<user_id>/link-zalo', methods=['POST'])
-def link_zalo_account(user_id):
-    """
-    MOCK API: Liên kết tài khoản Zalo.
-    Frontend gửi lên zalo_id (chính là số điện thoại).
-    """
-    data = request.get_json()
-    if not data or not data.get('zalo_id') or not data.get('zalo_username'):
-        return jsonify({"error": "Missing zalo_id or zalo_username"}), 400
-        
-    platform_id_zalo = 1 # Giả sử ID của Zalo trong bảng `platforms` là 1
-    return _link_platform_account(
-        user_id,
-        platform_id_zalo,
-        "zalo",
-        data['zalo_id'],
-        data['zalo_username']
-    )
+# ==============================================================================
+# TẢI VÀ CACHE PLATFORM IDS KHI ỨNG DỤNG KHỞI ĐỘNG
+# ==============================================================================
+PLATFORM_IDS = {}
+try:
+    print("Loading platform IDs from database...")
+    # Truy vấn bảng 'platforms' để lấy id và name
+    response = db_manager.client.from_('platforms').select('id, name').execute()
+    if response.data:
+        # Lưu kết quả vào dictionary PLATFORM_IDS
+        # Ví dụ: {'zalo': 1, 'discord': 2, 'telegram': 3}
+        for p in response.data:
+            PLATFORM_IDS[p['name']] = p['id']
+        print(f"✅ Platform IDs loaded successfully: {PLATFORM_IDS}")
+    else:
+        print("⚠️ No platforms found in the database.")
+except Exception as e:
+    print(f"❌ Critical error: Could not load platform IDs. Management features may fail. Error: {e}")
 
+
+#TEST_ZALO_PHONE = "0911002100"
+#TEST_ZALO_OTP = "999999"
+
+
+# ==============================================================================
+# API LIÊN KẾT ZALO (SỬ DỤNG DATABASE)
+# ==============================================================================
+
+# --- API Yêu cầu mã xác thực Zalo ---
 @app.route('/api/users/<user_id>/link-zalo/request-code', methods=['POST'])
 def request_zalo_link_code(user_id):
     data = request.get_json()
     phone_number = data.get('phone_number')
     if not phone_number:
         return jsonify({"error": "Phone number is required"}), 400
-
-    # Tạo mã OTP 6 chữ số
+    """
+    # LOGIC MỚI: KIỂM TRA SỐ ĐIỆN THOẠI TEST
+    # ==========================================================
+    if phone_number == TEST_ZALO_PHONE:
+        # Nếu là số điện thoại test, chỉ cần lưu OTP test và trả về thành công
+        # Không cần gửi tin nhắn Zalo thật
+        PLATFORM_IDS.get('zalo', 1) == {
+            "code": TEST_ZALO_OTP,
+            "phone": phone_number,
+            "expires_at": time.time() + 300 # Vẫn có thời gian hết hạn
+        }
+        print(f"✅ Test mode: Bypassed Zalo message for test phone number {phone_number}.")
+        return jsonify({"message": "Test verification code generated."}), 200
+        """
+    
     otp_code = str(random.randint(100000, 999999))
-    
-    # Lưu OTP tạm thời (hết hạn sau 300 giây = 5 phút)
-    OTP_STORE[user_id] = {
-        "code": otp_code,
-        "phone": phone_number,
-        "expires_at": time.time() + 300
-    }
-    
+    hashed_otp = bcrypt.generate_password_hash(otp_code).decode('utf-8')     # Hash mã OTP trước khi lưu vào DB để tăng bảo mật
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)    # Đặt thời gian hết hạn là 5 phút kể từ bây giờ
+
     try:
-        # Gửi tin nhắn chứa mã OTP đến người dùng
-        message = f"Mã xác thực liên kết tài khoản của bạn là: {otp_code}. Mã có hiệu lực trong 5 phút."
-        # Lưu ý: user_id cho Zalo chính là số điện thoại
+        data_to_upsert = {
+            'user_id': user_id,
+            'phone_number': phone_number,
+            'otp_code': hashed_otp,
+            'expires_at': expires_at.isoformat()
+        }
+        
+        response = db_manager.client.from_('otp_codes').upsert(
+            data_to_upsert,
+            on_conflict='user_id,phone_number' 
+        ).execute()
+        
+        
+        # Gửi mã OTP chưa hash đến người dùng
+        message = f"Mã xác thực liên kết tài khoản Zalo của bạn là: {otp_code}. Mã có hiệu lực trong 5 phút."
         zalo_api_client.send_message(user_id=phone_number, message=message)
         
-        print(f"Sent Zalo OTP {otp_code} to {phone_number} for user {user_id}")
+        print(f"Sent Zalo OTP to {phone_number} for user {user_id}")
         return jsonify({"message": "Verification code sent to your Zalo."}), 200
 
     except Exception as e:
-        print(f"Error sending Zalo OTP: {e}")
-        return jsonify({"error": "Failed to send verification code. Please check the phone number."}), 500
+        print(f"Error handling Zalo OTP request: {e}")
+        return jsonify({"error": "Failed to process verification code request."}), 500
 
 
-# --- API MỚI: Xác thực mã và hoàn tất liên kết Zalo ---
+# --- API Xác thực mã và hoàn tất liên kết Zalo ---
 @app.route('/api/users/<user_id>/link-zalo/verify-code', methods=['POST'])
 def verify_zalo_link_code(user_id):
     data = request.get_json()
     phone_number = data.get('phone_number')
-    code = data.get('code')
-    if not phone_number or not code:
+    code_from_user = data.get('code')
+    if not phone_number or not code_from_user:
         return jsonify({"error": "Phone number and code are required"}), 400
 
-    # Lấy thông tin OTP đã lưu
-    stored_otp_info = OTP_STORE.get(user_id)
+    try:
+        # Tìm bản ghi OTP trong DB
+        response = db_manager.client.from_('otp_codes').select('*').eq('user_id', user_id).eq('phone_number', phone_number).limit(1).execute()
 
-    if not stored_otp_info:
-        return jsonify({"error": "No verification process started for this user."}), 404
-
-    # Kiểm tra xem có đúng số điện thoại, đúng mã và chưa hết hạn không
-    if (stored_otp_info['phone'] == phone_number and 
-        stored_otp_info['code'] == code and 
-        time.time() < stored_otp_info['expires_at']):
+        if not response.data:
+            return jsonify({"error": "No verification process started for this user/phone number."}), 404
         
-        # Xóa OTP đã dùng
-        del OTP_STORE[user_id]
+        otp_record = response.data[0]
         
-        # Lấy platform_id của Zalo từ cache hoặc hard-code
-        platform_id_zalo = PLATFORM_IDS.get('zalo', 1) 
-        # (Lấy tên người dùng Zalo, có thể cần một hàm mới trong ZaloApiClient)
-        zalo_user_info = zalo_api_client.get_user_info(phone_number)
-        zalo_username = zalo_user_info.name if zalo_user_info else "Zalo User"
+        # Chuyển đổi thời gian hết hạn từ chuỗi về đối tượng datetime
+        expires_at = datetime.fromisoformat(otp_record['expires_at'])
 
-        # Gọi hàm liên kết tài khoản
-        return _link_platform_account(
-            user_id,
-            platform_id_zalo,
-            "zalo",
-            phone_number, # platform_user_id của Zalo là SĐT
-            zalo_username
-        )
-    else:
-        return jsonify({"error": "Invalid or expired verification code."}), 400
+        # Kiểm tra: mã có khớp không VÀ chưa hết hạn
+        if bcrypt.check_password_hash(otp_record['otp_code'], code_from_user) and datetime.now(timezone.utc) < expires_at:
+            
+            # Xóa mã OTP đã dùng khỏi DB để tránh dùng lại
+            db_manager.client.from_('otp_codes').delete().eq('id', otp_record['id']).execute()
+            
+            # --- Logic liên kết tài khoản (không đổi) ---
+            platform_id_zalo = PLATFORM_IDS.get('zalo', 1)
+            zalo_user_info = zalo_api_client.get_user_info(phone_number)
+            zalo_username = zalo_user_info.name if zalo_user_info else "Zalo User"
 
+            response, status_code = _link_platform_account(
+                user_id, platform_id_zalo, "zalo", phone_number, zalo_username
+            )
+            return response, status_code
+        else:
+            return jsonify({"error": "Invalid or expired verification code."}), 400
+
+    except Exception as e:
+        print(f"Error verifying Zalo OTP: {e}")
+        return jsonify({"error": "Failed to verify code."}), 500
 
 def run_web_app():
     app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
