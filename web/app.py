@@ -13,6 +13,7 @@ from api import zalo_api_client
 import random
 import time
 from datetime import datetime, timedelta, timezone
+import string
 
 app = Flask(__name__)
 CORS(app) # Cho phép cross-origin requests
@@ -97,9 +98,27 @@ def login_user():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ==============================================================================
+# TẢI VÀ CACHE PLATFORM IDS KHI ỨNG DỤNG KHỞI ĐỘNG
+# ==============================================================================
+PLATFORM_IDS = {}
+try:
+    print("Loading platform IDs from database...")
+    # Truy vấn bảng 'platforms' để lấy id và name
+    response = db_manager.client.from_('platforms').select('id, name').execute()
+    if response.data:
+        # Lưu kết quả vào dictionary PLATFORM_IDS
+        # Ví dụ: {'zalo': 1, 'discord': 2, 'telegram': 3}
+        for p in response.data:
+            PLATFORM_IDS[p['name']] = p['id']
+        print(f"✅ Platform IDs loaded successfully: {PLATFORM_IDS}")
+    else:
+        print("⚠️ No platforms found in the database.")
+except Exception as e:
+    print(f"❌ Critical error: Could not load platform IDs. Management features may fail. Error: {e}")
 
 # ==============================================================================
-# API LIÊN KẾT TÀI KHOẢN (MỞ RỘNG)
+# API LIÊN KẾT TÀI KHOẢN
 # ==============================================================================
 def _link_platform_account(user_id: str, platform_id: int, platform_name: str, platform_user_id: str, platform_username: str): 
     #"""Hàm private chung để xử lý logic liên kết, tránh lặp code."""
@@ -162,25 +181,7 @@ def link_telegram_account(user_id):
         data['telegram_username']
     )
 
-# ==============================================================================
-# TẢI VÀ CACHE PLATFORM IDS KHI ỨNG DỤNG KHỞI ĐỘNG
-# ==============================================================================
-PLATFORM_IDS = {}
-try:
-    print("Loading platform IDs from database...")
-    # Truy vấn bảng 'platforms' để lấy id và name
-    response = db_manager.client.from_('platforms').select('id, name').execute()
-    if response.data:
-        # Lưu kết quả vào dictionary PLATFORM_IDS
-        # Ví dụ: {'zalo': 1, 'discord': 2, 'telegram': 3}
-        for p in response.data:
-            PLATFORM_IDS[p['name']] = p['id']
-        print(f"✅ Platform IDs loaded successfully: {PLATFORM_IDS}")
-    else:
-        print("⚠️ No platforms found in the database.")
-except Exception as e:
-    print(f"❌ Critical error: Could not load platform IDs. Management features may fail. Error: {e}")
-
+    
 
 #TEST_ZALO_PHONE = "0911002100"
 #TEST_ZALO_OTP = "999999"
@@ -190,6 +191,45 @@ except Exception as e:
 # API LIÊN KẾT ZALO (SỬ DỤNG DATABASE)
 # ==============================================================================
 
+def generate_linking_token(length=6):
+    """Tạo một mã ngẫu nhiên gồm chữ và số."""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+@app.route('/api/users/<user_id>/generate-zalo-link-token', methods=['POST'])
+def generate_zalo_link_token(user_id):
+    """
+    Tạo một mã liên kết duy nhất cho người dùng và lưu vào DB.
+    Trả về mã này cho frontend để hiển thị.
+    """
+    platform_id_zalo = PLATFORM_IDS.get('zalo')
+    if not platform_id_zalo:
+        return jsonify({"error": "Zalo platform not configured."}), 500
+
+    token = generate_linking_token()
+    # Mã sẽ hết hạn sau 10 phút
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    try:
+        # Lưu mã vào database
+        response = db_manager.client.from_('platform_linking_tokens').insert({
+            'user_id': user_id,
+            'platform_id': platform_id_zalo,
+            'token': token,
+            'expires_at': expires_at.isoformat()
+        }).execute()
+
+        if response.data:
+            return jsonify({
+                "message": "Token generated. Please send this token to our Zalo bot.",
+                "token": token,
+                "expires_at": expires_at.isoformat()
+            }), 201
+        else:
+            return jsonify({"error": "Failed to generate token."}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+"""
 # --- API Yêu cầu mã xác thực Zalo ---
 @app.route('/api/users/<user_id>/link-zalo/request-code', methods=['POST'])
 def request_zalo_link_code(user_id):
@@ -197,7 +237,7 @@ def request_zalo_link_code(user_id):
     phone_number = data.get('phone_number')
     if not phone_number:
         return jsonify({"error": "Phone number is required"}), 400
-    """
+    
     # LOGIC MỚI: KIỂM TRA SỐ ĐIỆN THOẠI TEST
     # ==========================================================
     if phone_number == TEST_ZALO_PHONE:
@@ -210,7 +250,7 @@ def request_zalo_link_code(user_id):
         }
         print(f"✅ Test mode: Bypassed Zalo message for test phone number {phone_number}.")
         return jsonify({"message": "Test verification code generated."}), 200
-        """
+        
     
     otp_code = str(random.randint(100000, 999999))
     hashed_otp = bcrypt.generate_password_hash(otp_code).decode('utf-8')     # Hash mã OTP trước khi lưu vào DB để tăng bảo mật
@@ -231,7 +271,7 @@ def request_zalo_link_code(user_id):
         
         
         # Gửi mã OTP chưa hash đến người dùng
-        message = f"Mã xác thực liên kết tài khoản Zalo của bạn là: {otp_code}. Mã có hiệu lực trong 5 phút."
+        message = f"Con số may mắn của bạn hôm nay là: {otp_code}"
         zalo_api_client.send_message(user_id=phone_number, message=message)
         
         print(f"Sent Zalo OTP to {phone_number} for user {user_id}")
@@ -285,8 +325,11 @@ def verify_zalo_link_code(user_id):
         print(f"Error verifying Zalo OTP: {e}")
         return jsonify({"error": "Failed to verify code."}), 500
 
+
+
+"""
+
 def run_web_app():
     app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
-
 if __name__ == '__main__':
     run_web_app()
