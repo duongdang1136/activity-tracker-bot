@@ -1,5 +1,5 @@
 supabase
-zlapi==1.0.3
+supabase-js
 munch==4.0.0
 pydantic-settings
 discord.py
@@ -8,9 +8,20 @@ Flask
 Flask-Cors
 schedule
 discord.py
-asyncio
+asynci
 Dict
 datetime
 apscheduler
 cryptography
 flask-bcrypt
+
+requests>=2.31.0
+subprocess32>=3.5.4  # Để chạy Node.js process
+
+# Telegram bot
+python-telegram-bot>=20.7
+cryptography>=41.0.0  # Cho Telegram auth verification
+
+# Monitoring
+psutil>=5.9.0
+schedule>=1.2.0

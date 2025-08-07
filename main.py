@@ -2,12 +2,16 @@ import asyncio
 import threading
 import time
 import schedule
+import subprocess
+import threading
+import time
+import sys
+import os
 from typing import List, Dict
 
 # Import các hàm khởi động từ các module tương ứng
 from bot.discord_bot import start_discord_bot
 from bot.telegram_bot import start_telegram_bot
-from bot.zalo_listener import run_zalo_listener
 from web.app import run_web_app
 from services import management_service
 from config import settings
@@ -19,6 +23,12 @@ from config import settings
 # Bạn có thể lấy các ID này từ bảng `platform_groups` và `platforms` trong Supabase.
 MANAGED_GROUPS: List[Dict] = [
     {
+        'group_name': 'Đặng Gia (Zalo)', # Tên nhóm Zalo của bạn
+        'group_db_id': '6799604717677589329', # <<--- THAY THẾ BẰNG groupid ZALO CỦA BẠN
+        'platform_db_id': 1, # ID của platform 'Zalo' trong bảng platforms
+        'platform_name': 'Zalo',
+    },
+    {
         'group_name': 'Trading Squad (Discord)', # Bạn có thể đặt tên bất kỳ để dễ nhận biết
         'group_db_id': '3a6c0697-041b-4212-9ce0-e95ec68f58b2', # groupid của Discord bạn cung cấp
         'platform_db_id': 2, # ID của platform 'Discord' trong bảng platforms
@@ -27,11 +37,38 @@ MANAGED_GROUPS: List[Dict] = [
     {
         'group_name': 'Đặng Gia (Zalo)', # Tên nhóm Zalo của bạn
         'group_db_id': '6799604717677589329', # <<--- THAY THẾ BẰNG groupid ZALO CỦA BẠN
-        'platform_db_id': 1, # ID của platform 'Zalo' trong bảng platforms
-        'platform_name': 'Zalo',
+        'platform_db_id': 3, # ID của platform 'Zalo' trong bảng platforms
+        'platform_name': 'Telegram',
     },
     # Thêm các nhóm khác ở đây nếu có...
 ]
+
+def run_zalo_bot_process():
+    """
+    Hàm này sẽ khởi chạy bot Zalo (Node.js) như một tiến trình con.
+    """
+    # Đường dẫn đến thư mục chứa script Node.js
+    service_dir = os.path.join(os.path.dirname(__file__), 'bot', 'zalo_service')
+    script_path = os.path.join(service_dir, 'index.js')
+    
+    # Lệnh để chạy Node.js
+    # sys.executable là đường dẫn đến trình thông dịch Python hiện tại,
+    # chúng ta sẽ tìm node.exe ở một vị trí tương đối hoặc trong PATH
+    node_command = 'node' # Giả định 'node' có trong PATH của hệ thống
+    
+    print(f"🤖 Starting Zalo Bot Service process from: {service_dir}")
+    
+    # subprocess.Popen sẽ chạy lệnh trong một tiến trình mới và không block.
+    # stdout=subprocess.PIPE và stderr=subprocess.PIPE để chúng ta có thể đọc log.
+    process = subprocess.Popen(
+        [node_command, script_path],
+        stdout=sys.stdout, # Chuyển hướng log của Node.js ra terminal chính
+        stderr=sys.stderr, # Chuyển hướng lỗi của Node.js ra terminal chính
+        cwd=service_dir # Đặt thư mục làm việc cho tiến trình con
+    )
+    
+    print(f"✅ Zalo Bot Service started with PID: {process.pid}")
+    return process
 
 # ==============================================================================
 # CÁC HÀM TÁC VỤ ĐỊNH KỲ (SCHEDULED TASKS)
@@ -72,38 +109,45 @@ def run_scheduler():
 # ==============================================================================
 
 async def main():
-    """
-    Hàm chính bất đồng bộ, điều phối khởi động tất cả các thành phần.
-    """
     print("\n" + "*"*60)
-    print("🚀 INITIALIZING MULTI-PLATFORM BOT SYSTEM 🚀")
+    print("🚀 INITIALIZING ALL SERVICES (Python & Node.js) 🚀")
     print("*"*60)
 
-    # Các tác vụ đồng bộ (sync) cần chạy trong thread riêng để không block vòng lặp async
-    # `daemon=True` đảm bảo các thread này sẽ tự động tắt khi chương trình chính kết thúc
+    # --- 2. Khởi chạy các tiến trình/luồng đồng bộ ---
     
+    # Chạy Zalo Bot (Node.js) trong một thread riêng để quản lý
+    zalo_process = None
+    def start_and_manage_zalo():
+        nonlocal zalo_process
+        zalo_process = run_zalo_bot_process()
+        zalo_process.wait() # Chờ tiến trình kết thúc
     
-    zalo_thread = threading.Thread(target=run_zalo_listener, name="ZaloListener", daemon=True) # 1. Chạy Zalo Listener (thư viện zlapi là sync)
-    web_thread = threading.Thread(target=run_web_app, name="WebApp", daemon=True) # 2. Chạy Web App (Flask là sync)
-    scheduler_thread = threading.Thread(target=run_scheduler, name="Scheduler", daemon=True) # 3. Chạy Scheduler (thư viện schedule là sync)
-    # Bắt đầu các thread đồng bộ
+    zalo_thread = threading.Thread(target=start_and_manage_zalo, name="ZaloProcessManager", daemon=True)
+    
+    web_thread = threading.Thread(target=run_web_app, name="WebApp", daemon=True)
+    scheduler_thread = threading.Thread(target=run_scheduler, name="Scheduler", daemon=True)
+    
     zalo_thread.start()
     web_thread.start()
     scheduler_thread.start()
     
-    # Các tác vụ bất đồng bộ (async) có thể chạy cùng nhau trong vòng lặp sự kiện chính    
-    # 1. Chạy Discord Bot (discord.py là async)
-    discord_task = asyncio.create_task(start_discord_bot(), name="DiscordBotTask")    
-    # 2. Chạy Telegram Bot (python-telegram-bot là async)
+    # --- 3. Khởi chạy các bot bất đồng bộ của Python ---
+    discord_task = asyncio.create_task(start_discord_bot(), name="DiscordBotTask")
     telegram_task = asyncio.create_task(start_telegram_bot(), name="TelegramBotTask")
-    # Chờ tất cả các tác vụ async hoàn thành (trong trường hợp này là mãi mãi, cho đến khi có lỗi)
-    await asyncio.gather(discord_task, telegram_task)
+
+    print("✅ All components are starting...")
+    try:
+        await asyncio.gather(discord_task, telegram_task)
+    finally:
+        # --- 4. Dọn dẹp khi chương trình chính kết thúc ---
+        print("\n🛑 Shutting down... Terminating Zalo Bot process.")
+        if zalo_process:
+            zalo_process.terminate() # Gửi tín hiệu để tắt tiến trình Node.js
+
 
 if __name__ == "__main__":
     try:
-        # Bắt đầu vòng lặp sự kiện bất đồng bộ
+        
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 System shutdown requested by user. Goodbye!")
-    except Exception as e:
-        print(f"\n💥 A critical error occurred in the main event loop: {e}")

@@ -1,6 +1,6 @@
 import asyncio
 from config import db_manager, settings
-from api import telegram_api_client, zalo_api_client
+from api import telegram_api_client
 try:
     from bot.discord_bot import DiscordApiClient
 except ImportError:
@@ -18,8 +18,7 @@ class ManagementService:
         # Điều này cho phép chúng ta gọi client một cách linh hoạt dựa trên tên platform
         self.api_clients = {
             'discord': discord_api_client,
-            'telegram': telegram_api_client,
-            'zalo': zalo_api_client
+            'telegram': telegram_api_client
         }
         print("✅ ManagementService initialized with available API clients.")
 

@@ -9,7 +9,7 @@ from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from config import db_manager
 from services import WebService
-from api import zalo_api_client
+
 import random
 import time
 from datetime import datetime, timedelta, timezone
@@ -229,105 +229,7 @@ def generate_zalo_link_token(user_id):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-"""
-# --- API Yêu cầu mã xác thực Zalo ---
-@app.route('/api/users/<user_id>/link-zalo/request-code', methods=['POST'])
-def request_zalo_link_code(user_id):
-    data = request.get_json()
-    phone_number = data.get('phone_number')
-    if not phone_number:
-        return jsonify({"error": "Phone number is required"}), 400
-    
-    # LOGIC MỚI: KIỂM TRA SỐ ĐIỆN THOẠI TEST
-    # ==========================================================
-    if phone_number == TEST_ZALO_PHONE:
-        # Nếu là số điện thoại test, chỉ cần lưu OTP test và trả về thành công
-        # Không cần gửi tin nhắn Zalo thật
-        PLATFORM_IDS.get('zalo', 1) == {
-            "code": TEST_ZALO_OTP,
-            "phone": phone_number,
-            "expires_at": time.time() + 300 # Vẫn có thời gian hết hạn
-        }
-        print(f"✅ Test mode: Bypassed Zalo message for test phone number {phone_number}.")
-        return jsonify({"message": "Test verification code generated."}), 200
-        
-    
-    otp_code = str(random.randint(100000, 999999))
-    hashed_otp = bcrypt.generate_password_hash(otp_code).decode('utf-8')     # Hash mã OTP trước khi lưu vào DB để tăng bảo mật
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)    # Đặt thời gian hết hạn là 5 phút kể từ bây giờ
 
-    try:
-        data_to_upsert = {
-            'user_id': user_id,
-            'phone_number': phone_number,
-            'otp_code': hashed_otp,
-            'expires_at': expires_at.isoformat()
-        }
-        
-        response = db_manager.client.from_('otp_codes').upsert(
-            data_to_upsert,
-            on_conflict='user_id,phone_number' 
-        ).execute()
-        
-        
-        # Gửi mã OTP chưa hash đến người dùng
-        message = f"Con số may mắn của bạn hôm nay là: {otp_code}"
-        zalo_api_client.send_message(user_id=phone_number, message=message)
-        
-        print(f"Sent Zalo OTP to {phone_number} for user {user_id}")
-        return jsonify({"message": "Verification code sent to your Zalo."}), 200
-
-    except Exception as e:
-        print(f"Error handling Zalo OTP request: {e}")
-        return jsonify({"error": "Failed to process verification code request."}), 500
-
-
-# --- API Xác thực mã và hoàn tất liên kết Zalo ---
-@app.route('/api/users/<user_id>/link-zalo/verify-code', methods=['POST'])
-def verify_zalo_link_code(user_id):
-    data = request.get_json()
-    phone_number = data.get('phone_number')
-    code_from_user = data.get('code')
-    if not phone_number or not code_from_user:
-        return jsonify({"error": "Phone number and code are required"}), 400
-
-    try:
-        # Tìm bản ghi OTP trong DB
-        response = db_manager.client.from_('otp_codes').select('*').eq('user_id', user_id).eq('phone_number', phone_number).limit(1).execute()
-
-        if not response.data:
-            return jsonify({"error": "No verification process started for this user/phone number."}), 404
-        
-        otp_record = response.data[0]
-        
-        # Chuyển đổi thời gian hết hạn từ chuỗi về đối tượng datetime
-        expires_at = datetime.fromisoformat(otp_record['expires_at'])
-
-        # Kiểm tra: mã có khớp không VÀ chưa hết hạn
-        if bcrypt.check_password_hash(otp_record['otp_code'], code_from_user) and datetime.now(timezone.utc) < expires_at:
-            
-            # Xóa mã OTP đã dùng khỏi DB để tránh dùng lại
-            db_manager.client.from_('otp_codes').delete().eq('id', otp_record['id']).execute()
-            
-            # --- Logic liên kết tài khoản (không đổi) ---
-            platform_id_zalo = PLATFORM_IDS.get('zalo', 1)
-            zalo_user_info = zalo_api_client.get_user_info(phone_number)
-            zalo_username = zalo_user_info.name if zalo_user_info else "Zalo User"
-
-            response, status_code = _link_platform_account(
-                user_id, platform_id_zalo, "zalo", phone_number, zalo_username
-            )
-            return response, status_code
-        else:
-            return jsonify({"error": "Invalid or expired verification code."}), 400
-
-    except Exception as e:
-        print(f"Error verifying Zalo OTP: {e}")
-        return jsonify({"error": "Failed to verify code."}), 500
-
-
-
-"""
 
 def run_web_app():
     app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
