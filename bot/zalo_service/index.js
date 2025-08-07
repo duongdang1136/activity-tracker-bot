@@ -3,7 +3,7 @@ const { Zalo, ThreadType } = require('zca-js');
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // ==============================================================================
 // CẤU HÌNH
@@ -44,7 +44,7 @@ async function handleActivityMessage(message) {
     };
 
     console.log(`[Activity] Tracking 'message' from ${metadata.display_name} in group ${metadata.group_name}`);
-    
+
     // Gọi RPC function trên Supabase
     const { error } = await supabase.rpc('update_activity_with_group', {
         p_user_platform_id: message.from,
@@ -65,6 +65,7 @@ async function handleActivityMessage(message) {
 // ==============================================================================
 // HÀM CHÍNH
 // ==============================================================================
+
 async function main() {
     console.log("🤖 Zalo Bot Service (zca-js with QR Flow) is starting...");
     const zalo = new Zalo();
@@ -75,7 +76,7 @@ async function main() {
         try {
             const sessionData = JSON.parse(ZALO_SESSION_DATA);
             // Giả định thư viện có phương thức login bằng session
-            api = await zalo.loginWithSession(sessionData); 
+            api = await zalo.loginWithSession(sessionData);
             console.log("✅ Successfully logged in using saved session!");
         } catch (error) {
             console.warn("⚠️ Failed to login with session, it might be expired. Falling back to QR code.", error.message);
@@ -88,16 +89,16 @@ async function main() {
         try {
             console.log("📱 Starting QR code login process...");
             console.log("Please scan the QR code that will appear in your terminal or browser");
-            
+
             // Đăng nhập bằng QR code
-            api = await zalo.loginQR();
-            
+            const api = await zalo.loginQR();
+
             console.log("✅ Successfully logged in via QR code!");
-            
+
             // ---- Bước 3: Lấy và in ra session mới ----
             // Giả định thư viện có phương thức để lấy session
-            const newSessionData = await api.getSession(); 
-            
+            const newSessionData = await api.getSession();
+
             console.log("\n\n========================= IMPORTANT =========================");
             console.log("COPY AND PASTE THE FOLLOWING LINE INTO YOUR .env FILE");
             console.log("TO AVOID SCANNING QR CODE NEXT TIME:");
@@ -118,11 +119,103 @@ async function main() {
             console.log(`Thread: ${message.threadId}`);
             console.log(`Type: ${message.type === ThreadType.Group ? 'Group' : 'Direct'}`);
             console.log(`Content: ${typeof message.data.content === "string" ? message.data.content : '[Non-text content]'}`);
-            console.log(JSON.stringify(message, null, 2)); 
+            console.log(JSON.stringify(message, null, 2));
             try {
                 await handleActivityMessage(message);
             } catch (error) {
                 console.error("❌ Error handling message:", error);
+            }
+        });
+
+        // Lắng nghe sự kiện tin nhắn
+        api.listener.on("message", async (message) => {
+            try {
+                // Kiểm tra xem tin nhắn có phải là plain text không
+                const isPlainText = typeof message.data.content === "string";
+
+                // Bỏ qua tin nhắn của chính mình
+                if (message.isSelf || !isPlainText) {
+                    return;
+                }
+
+                const messageContent = message.data.content;
+                console.log(`Nhận tin nhắn: "${messageContent}" từ ${message.threadId}`);
+
+                // Kiểm tra xem tin nhắn có phải là dãy 6 số không
+                if (is6DigitOTP(messageContent)) {
+                    console.log(`Phát hiện OTP 6 số: ${messageContent}`);
+
+                    // Xử lý theo loại thread (cá nhân hoặc nhóm)
+                    switch (message.type) {
+                        case ThreadType.User: {
+                            console.log("Gửi phản hồi đến tin nhắn cá nhân...");
+
+                            // Thử gửi tin nhắn đơn giản trước
+                            try {
+                                await api.sendMessage(
+                                    "Cảm ơn bạn",
+                                    message.threadId,
+                                    ThreadType.User
+                                );
+                                console.log("Đã gửi tin nhắn cảm ơn thành công!");
+                            } catch (simpleError) {
+                                console.log("Lỗi gửi tin nhắn đơn giản, thử với object:");
+
+                                // Thử với format object khác
+                                try {
+                                    await api.sendMessage(
+                                        { msg: "Cảm ơn bạn" },
+                                        message.threadId,
+                                        ThreadType.User
+                                    );
+                                    console.log("Đã gửi tin nhắn với object thành công!");
+                                } catch (objectError) {
+                                    console.error("Lỗi gửi tin nhắn với object:", objectError);
+
+                                    // Thử method khác nếu có
+                                    console.log("Thử gửi tin nhắn không quote...");
+                                    await api.sendMessage(
+                                        {
+                                            msg: "Cảm ơn bạn",
+                                            // Bỏ quote để tránh lỗi
+                                        },
+                                        message.threadId,
+                                        ThreadType.User
+                                    );
+                                }
+                            }
+                            break;
+                        }
+                        case ThreadType.Group: {
+                            console.log("Gửi phản hồi đến nhóm...");
+
+                            try {
+                                await api.sendMessage(
+                                    "Cảm ơn bạn",
+                                    message.threadId,
+                                    ThreadType.Group
+                                );
+                                console.log("Đã gửi tin nhắn cảm ơn thành công!");
+                            } catch (groupError) {
+                                console.log("Lỗi gửi tin nhắn nhóm, thử với object:");
+
+                                await api.sendMessage(
+                                    { msg: "Cảm ơn bạn" },
+                                    message.threadId,
+                                    ThreadType.Group
+                                );
+                            }
+                            break;
+                        }
+                        default:
+                            console.log("Loại thread không xác định");
+                    }
+                } else {
+                    console.log(`Tin nhắn "${messageContent}" không phải là OTP 6 số`);
+                }
+
+            } catch (error) {
+                console.error("Lỗi khi xử lý tin nhắn:", error);
             }
         });
 

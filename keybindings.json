@@ -1,0 +1,5 @@
+{
+  "key": "alt+shift+t",
+  "command": "trailing-spaces.deleteTrailingSpaces",
+  "when": "editorTextFocus"
+}
