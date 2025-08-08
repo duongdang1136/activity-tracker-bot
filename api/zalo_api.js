@@ -1,4 +1,4 @@
-import { Zalo, ThreadType } from 'zca-js';
+import { Zalo, ThreadType, MessageType } from 'zca-js';
 import axios from 'axios';
 import { ZALO_CONFIG } from '../config/zalo_config.js';
 
