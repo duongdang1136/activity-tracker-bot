@@ -1,30 +1,27 @@
 process.stdout.setEncoding('utf8');
 process.stderr.setEncoding('utf8');
-const { Zalo, ThreadType } = require('zca-js');
-const { createClient } = require('@supabase/supabase-js');
-const path = require('path');
+import { Zalo } from 'zca-js';
+import { createClient } from '@supabase/supabase-js';
+import { ZALO_CONFIG } from './config/zalo_config.js';
+import ZaloAPI from './api/zalo_api.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-
+// Đoạn code này để đọc file .env từ thư mục gốc của toàn bộ dự án
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// Đọc file .env từ thư mục gốc của toàn bộ dự án
+dotenv.config({ path: path.join(__dirname, '../.env') });
 // ==============================================================================
 // CẤU HÌNH
 // ==============================================================================
 
-// Supabase
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
-
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error("❌ Missing required environment variables. Check your .env file.");
-    process.exit(1);
-}
-
-
-// Khởi tạo Supabase client
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// --- KHỞI TẠO CÁC DỊCH VỤ ---
+const supabase = createClient(ZALO_CONFIG.SUPABASE_URL, ZALO_CONFIG.SUPABASE_KEY);
+const zaloApi = new ZaloAPI(ZALO_CONFIG, supabase);
 const PLATFORM_NAME = 'zalo';
+
 
 
 // ==============================================================================
@@ -45,7 +42,7 @@ async function handleActivityMessage(message) {
     };
 
     console.log(`[Activity] Tracking 'message' from ${metadata.display_name} in group ${metadata.group_name}`);
-    
+
     // Gọi RPC function trên Supabase
     const { error } = await supabase.rpc('update_activity_with_group', {
         p_user_platform_id: message.from,
@@ -63,6 +60,38 @@ async function handleActivityMessage(message) {
 }
 
 
+async function messageDispatcher(message) {
+    try {
+        const messageText = message.content || ''; // Lấy nội dung tin nhắn
+        // Kiểm tra xem tin nhắn có phải là plain text không
+        const isPlainText = typeof message.data.content === "string";
+
+        // Bỏ qua tin nhắn của chính mình
+        if (message.isSelf || !isPlainText) {
+            return;
+        }
+
+        const messageContent = message.data.content;
+        console.log(`Nhận tin nhắn: "${messageContent}" từ ${message.threadId}`);
+
+
+        // Nếu có vẻ là token, hãy thử xử lý nó.
+        const isToken = ZALO_CONFIG.LINKING_TOKEN_PATTERNS.some(p => p.test(messageText.trim()));
+        if (isToken) {
+            const isHandled = await zaloApi.handleLinkingToken(messageText, message.from);
+            if (isHandled) return;
+        }
+
+        // Nếu không phải là một token đã được xử lý,
+        // thì coi nó là một hoạt động bình thường và ghi điểm.
+        await zaloApi.trackActivity(message);
+
+    } catch (error) {
+        console.error("Lỗi khi xử lý tin nhắn:", error);
+    }
+}
+
+
 // ==============================================================================
 // HÀM CHÍNH
 // ==============================================================================
@@ -73,119 +102,45 @@ async function main() {
 
         console.log("📱 Starting QR code login process...");
         console.log("Please scan the QR code that will appear in your terminal or browser.");
-        
-        // Function để kiểm tra xem tin nhắn có phải là dãy 6 số không
-        function is6DigitOTP(message) {
-            // Regex để kiểm tra dãy chính xác 6 chữ số
-            const otpRegex = /^\d{6}$/;
-            return otpRegex.test(message.trim());
-        }
+
 
         // 1. Đăng nhập và lấy đối tượng `api`
         const api = await zalo.loginQR();
-                
+
         console.log("✅ Successfully logged in via QR code!");
-        
+
 
         // 2. CHỈ SAU KHI CÓ `api`, MỚI BẮT ĐẦU ĐĂNG KÝ LISTENER
         console.log("Registering event listeners...");
 
         api.listener.on("message", async (message) => {
-            console.log(`\n--- Received Zalo message ---`);
+            console.log(`\n--- Nhận được tin nhắn từ Zalo user---`);
             console.log(`From: ${message.from}`);
             console.log(`Thread: ${message.threadId}`);
             console.log(`Type: ${message.type === ThreadType.Group ? 'Group' : 'Direct'}`);
             console.log(`Content: ${typeof message.data.content === "string" ? message.data.content : '[Non-text content]'}`);
-            console.log(JSON.stringify(message, null, 2)); 
+            console.log(JSON.stringify(message, null, 2));
+
+            messageDispatcher(message);
             try {
                 await handleActivityMessage(message);
             } catch (error) {
                 console.error("❌ Error handling message:", error);
             }
         });
-        // Lắng nghe sự kiện tin nhắn
-        api.listener.on("message", async (message) => {
-            try {
-                // Kiểm tra xem tin nhắn có phải là plain text không
-                const isPlainText = typeof message.data.content === "string";
-                
-                // Bỏ qua tin nhắn của chính mình
-                if (message.isSelf || !isPlainText) {
-                    return;
-                }
-                
-                const messageContent = message.data.content;
-                console.log(`Nhận tin nhắn: "${messageContent}" từ ${message.threadId}`);
-                
-                // Kiểm tra xem tin nhắn có phải là dãy 6 số không
-                if (is6DigitOTP(messageContent)) {
-                    console.log(`Phát hiện OTP 6 số: ${messageContent}`);
-                    
-                    // Xử lý theo loại thread (cá nhân hoặc nhóm)
-                    switch (message.type) {
-                        case ThreadType.User: {
-                            console.log("Gửi phản hồi đến tin nhắn cá nhân...");
-                            
-                            // Thử gửi tin nhắn đơn giản trước
-                            try {
-                                await api.sendMessage(
-                                    "Cảm ơn bạn",
-                                    message.threadId,
-                                    ThreadType.User
-                                );
-                                console.log("Đã gửi tin nhắn cảm ơn thành công!");
-                            } catch (simpleError) {
-                                console.log("Lỗi gửi tin nhắn đơn giản, thử với object:");
-                                
-                                // Thử với format object khác
-                                try {
-                                    await api.sendMessage(
-                                        { msg: "Cảm ơn bạn" },
-                                        message.threadId,
-                                        ThreadType.User
-                                    );
-                                    console.log("Đã gửi tin nhắn với object thành công!");
-                                } catch (objectError) {
-                                    console.error("Lỗi gửi tin nhắn với object:", objectError);
-                                    
-                                    // Thử method khác nếu có
-                                    console.log("Thử gửi tin nhắn không quote...");
-                                    await api.sendMessage(
-                                        { 
-                                            msg: "Cảm ơn bạn",
-                                            // Bỏ quote để tránh lỗi
-                                        },
-                                        message.threadId,
-                                        ThreadType.User
-                                    );
-                                }
-                            }
-                            break;
-                        }
-                        default:
-                            console.log("Loại thread không xác định");
-                    }
-                } else {
-                    console.log(`Tin nhắn "${messageContent}" không phải là OTP 6 số`);
-                }
-                
-            } catch (error) {
-                console.error("Lỗi khi xử lý tin nhắn:", error);
-            }
-        });
+
+        api.on("disconnect", () => console.log("Mất kết nối!"));
         // Xử lý các event khác nếu cần
         api.listener.on("error", (error) => {
             console.error("❌ Listener Error:", error);
         });
-        
+
         // 3. Bắt đầu lắng nghe
-        api.listener.start();
-        console.log("✅ Zalo Bot is connected and listening for messages...");
-        console.log("⚠️  Note: Only one web listener can run per account at a time.");
-        console.log("   If you open Zalo in browser, the listener will stop automatically.");
+        await api.listen();
+        console.log("✅ Zalo Bot is connected and listening.");
 
     } catch (error) {
-        console.error("❌ Fatal error during Zalo bot initialization:", error);
+        console.error("❌ Lỗi nghiêm trọng khi khởi tạo bot.", error);
         process.exit(1); // Thoát nếu có lỗi nghiêm trọng
     }
 }

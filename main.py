@@ -50,14 +50,14 @@ def run_zalo_bot_process():
     # Đường dẫn đến thư mục chứa script Node.js
     service_dir = os.path.join(os.path.dirname(__file__), 'bot', 'zalo_service')
     script_path = os.path.join(service_dir, 'index.js')
-    
+
     # Lệnh để chạy Node.js
     # sys.executable là đường dẫn đến trình thông dịch Python hiện tại,
     # chúng ta sẽ tìm node.exe ở một vị trí tương đối hoặc trong PATH
     node_command = 'node' # Giả định 'node' có trong PATH của hệ thống
-    
+
     print(f"🤖 Starting Zalo Bot Service process from: {service_dir}")
-    
+
     # subprocess.Popen sẽ chạy lệnh trong một tiến trình mới và không block.
     # stdout=subprocess.PIPE và stderr=subprocess.PIPE để chúng ta có thể đọc log.
     process = subprocess.Popen(
@@ -66,7 +66,7 @@ def run_zalo_bot_process():
         stderr=sys.stderr, # Chuyển hướng lỗi của Node.js ra terminal chính
         cwd=service_dir # Đặt thư mục làm việc cho tiến trình con
     )
-    
+
     print(f"✅ Zalo Bot Service started with PID: {process.pid}")
     return process
 
@@ -95,8 +95,8 @@ def run_scheduler():
     "Thiết lập và chạy vòng lặp cho các tác vụ định kỳ.Hàm này sẽ chạy trong một thread riêng."
     print("🕒 Scheduler is running in standby mode (Discovery Mode).")
     #print("🕒 Scheduler starting...")
-    #schedule.every().day.at("08:00").do(scheduled_warning_job) # Lên lịch cảnh báo: Chạy mỗi ngày vào lúc 08:00       
-    #schedule.every().monday.at("10:00").do(scheduled_kick_job) # Lên lịch kick: Chạy mỗi thứ Hai đầu tuần vào lúc 10:00  
+    #schedule.every().day.at("08:00").do(scheduled_warning_job) # Lên lịch cảnh báo: Chạy mỗi ngày vào lúc 08:00
+    #schedule.every().monday.at("10:00").do(scheduled_kick_job) # Lên lịch kick: Chạy mỗi thứ Hai đầu tuần vào lúc 10:00
     #print("🚀 Running initial warning cycle for testing...") # Chạy lần đầu ngay khi khởi động để test
     #scheduled_warning_job()
 
@@ -121,16 +121,16 @@ async def main():
         nonlocal zalo_process
         zalo_process = run_zalo_bot_process()
         zalo_process.wait() # Chờ tiến trình kết thúc
-    
+
     zalo_thread = threading.Thread(target=start_and_manage_zalo, name="ZaloProcessManager", daemon=True)
-    
+
     web_thread = threading.Thread(target=run_web_app, name="WebApp", daemon=True)
     scheduler_thread = threading.Thread(target=run_scheduler, name="Scheduler", daemon=True)
-    
+
     zalo_thread.start()
     web_thread.start()
     scheduler_thread.start()
-    
+
     # --- 3. Khởi chạy các bot bất đồng bộ của Python ---
     discord_task = asyncio.create_task(start_discord_bot(), name="DiscordBotTask")
     telegram_task = asyncio.create_task(start_telegram_bot(), name="TelegramBotTask")
@@ -147,7 +147,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        
+
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 System shutdown requested by user. Goodbye!")

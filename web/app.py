@@ -81,10 +81,10 @@ def login_user():
     try:
         # Tìm user bằng email
         response = db_manager.client.from_('users').select('*').eq('email', email).limit(1).execute()
-        
+
         if not response.data:
             return jsonify({"error": "Invalid credentials"}), 401
-            
+
         user = response.data[0]
         # So sánh mật khẩu đã hash
         if bcrypt.check_password_hash(user['hashed_password'], password):
@@ -94,7 +94,7 @@ def login_user():
             return jsonify({"message": "Login successful", "user": user}), 200
         else:
             return jsonify({"error": "Invalid credentials"}), 401
-            
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -120,7 +120,7 @@ except Exception as e:
 # ==============================================================================
 # API LIÊN KẾT TÀI KHOẢN
 # ==============================================================================
-def _link_platform_account(user_id: str, platform_id: int, platform_name: str, platform_user_id: str, platform_username: str): 
+def _link_platform_account(user_id: str, platform_id: int, platform_name: str, platform_user_id: str, platform_username: str):
     #"""Hàm private chung để xử lý logic liên kết, tránh lặp code."""
     try:
         response = db_manager.client.from_('user_platform_profiles').insert({
@@ -129,7 +129,7 @@ def _link_platform_account(user_id: str, platform_id: int, platform_name: str, p
             'platform_user_id': platform_user_id,
             'platform_username': platform_username
         }).execute()
-        
+
         if response.data:
             return jsonify({"message": f"{platform_name.capitalize()} account linked successfully"}), 200
         else:
@@ -151,7 +151,7 @@ def link_discord_account(user_id):
     data = request.get_json()
     if not data or not data.get('discord_id') or not data.get('discord_username'):
         return jsonify({"error": "Missing discord_id or discord_username"}), 400
-        
+
     platform_id_discord = 2 # Giả sử ID của Discord trong bảng `platforms` là 2
     return _link_platform_account(
         user_id,
@@ -171,7 +171,7 @@ def link_telegram_account(user_id):
     data = request.get_json()
     if not data or not data.get('telegram_id') or not data.get('telegram_username'):
         return jsonify({"error": "Missing telegram_id or telegram_username"}), 400
-        
+
     platform_id_telegram = 3 # Giả sử ID của Telegram trong bảng `platforms` là 3
     return _link_platform_account(
         user_id,
@@ -181,7 +181,7 @@ def link_telegram_account(user_id):
         data['telegram_username']
     )
 
-    
+
 
 #TEST_ZALO_PHONE = "0911002100"
 #TEST_ZALO_OTP = "999999"
