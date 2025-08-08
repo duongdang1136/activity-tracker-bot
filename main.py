@@ -114,7 +114,7 @@ async def main():
     print("*"*60)
 
     # --- 2. Khởi chạy các tiến trình/luồng đồng bộ ---
-    
+
     # Chạy Zalo Bot (Node.js) trong một thread riêng để quản lý
     zalo_process = None
     def start_and_manage_zalo():
@@ -151,3 +151,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 System shutdown requested by user. Goodbye!")
+
+

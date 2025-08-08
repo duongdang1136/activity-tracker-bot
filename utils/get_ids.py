@@ -26,7 +26,7 @@ def fetch_and_print_ids():
             id,
             group_name,
             group_platform_id,
-            platforms (
+            platforms!platform_groups_platform_id_fkey (
                 id,
                 name
             )
